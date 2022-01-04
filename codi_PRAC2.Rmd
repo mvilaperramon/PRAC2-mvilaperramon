@@ -1,0 +1,199 @@
+title: "PRÀCTICA 2: Neteja i anàlisi de dades
+author: "Marc Vila Perramon"
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+bibliography: scholar.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load_libraries, include=FALSE}
+library(nortest)
+library(knitr)
+```
+
+## 1. Regressió lineal
+Descripció del dataset. Perquè és important i quina pregunta/problema pretén respondre?
+
+Dataset: El dataset escollit s'anomena "Suicide Rates Overview 1985 to 2016", conté dades el nombre de suicidis que s'han produït segons variables espaials, temporals, socials i econòmiques.
+
+Origen: Kaggle (https://www.kaggle.com/russellyates88/suicide-rates-overview-1985-to-2016).
+
+Descripció de les variables: 
+- country: País
+- year: Any
+- sex: Sexe
+- age: Edat
+- suicides_no: Nombre de suicidis
+- population: Població
+- suicides/100k pop: Suicidis per cada 100.000 persones de població
+- HDI for year: Índex de desenvolupament anual
+- gdp_for_year ($): PIB anual en dòlars
+
+Objectiu: Amb aquest anàlisi pretenc desxifrar si els factors "edat", "sexe" tenen un impacte significatiu en el suicidi. Crec que aquest estudi és rellevant perquè aborda un problema social de gran magnitud com és el suicidi.
+
+A continuació mostrarem el tipus de variables que ens ofereix el dataset i els seus estadístics principals:
+```{r}
+# Importem el set de dades dat_Air, analitzem el tipus de variables que tenim i en mostrem un resum dls estadístics principals
+suicide_rates <- read.csv(file='C:/Users/Marc Vila/Documents/UOC/Tipologia i cicle de vida de dades/PRAC 2/master.csv',sep=",")
+str(suicide_rates)
+summary(suicide_rates)
+```
+## 2. Integració i selecció de les dades d’interès a analitzar
+
+Selecció de les dades d'interès a analitzar:
+
+- Seleccionem les dades del 2010, per incrementar precisió en l'anàlisi, obtenint un set de dades transaccional i no temporal.
+- Seleccionem les variables d'interès per l'anàlisi: "sex", "age", "suicides/100k pop".
+- Per l'anàlisi disposarem de 1056 observacions.
+
+```{r}
+srates_2010 <- suicide_rates[suicide_rates$year == 2010, ] 
+srates <- srates_2010[, c("sex", "age", "suicides.100k.pop")]
+length(srates$suicides.100k.pop)
+```
+Intregració de les dades:
+
+Per poder realitzar ls anàlisis corresponents en els següents apartats, hem creat variables dummie per cada possible valor de les variables factorials.
+```{r}
+srates_dummies <- data.frame(srates[ , ! colnames(srates) %in% "sex"], model.matrix( ~ sex - 1, srates))
+srates_dummies <- data.frame(srates_dummies[ , ! colnames(srates_dummies) %in% "age"], model.matrix( ~ age - 1, srates_dummies))
+```
+
+Neteja de les dades: 
+
+- Comprovem que no hi ha dades buides:
+En cas d'haver-ne trobat, per aconseguir la ,àxima precisió en l'anàlisi, haguéssim descartat les observacions que tinguéssin valors buits en alguna variable
+```{r}
+colSums(is.na(srates))
+colSums(srates=="")
+```
+- Valors extrems:
+```{r}
+# Comprovem que el nombre de factors de les variables "sex" i "age" és correcte
+str(srates$sex)
+str(srates$age)
+
+# Comprovem l'existència de valors extrems amb un gràfic de caixa
+boxplot(srates$suicides.100k.pop,main="Box plot", col="gray")
+```
+Ens hem trobat amb un valor extrem que destaca per ser molt major que la resta d'observacions de la mostra. He decidit no suprimir-lo ja que es troba dintre del rang que considero possible tot i que es diferencïi molt de la resta.
+
+Si haguéssim considerat que aquest valor extrem es tractava d'un error, haguéssim descartat l'observació en qüestió de la mostra, igual que en el cas dels valors buits.
+
+```{r}
+# Creem nous fitxers csv amb les dades netes per l'anàlisi
+write.csv(srates, "srates.csv")
+write.csv(srates_dummies, "srates_dummies.csv")
+```
+
+## 4. Anàlisi de les dades
+
+# 4.1. Selecció dels grups de dades que es volen analitzar/comparar (planificació dels anàlisis a aplicar)
+Els grups de dades a analitzar seran les variables del dataset net "srates! que hem creat en l'apartat anterior.
+
+# 4.2. Comprovació de la normalitat i homogeneïtat de la variància.
+
+- Comprovació de la normalitat:
+Per realitzar aquesta prova utilitzarem el test d'Anderson-Darling.
+
+
+```{r}
+library(nortest)
+
+alpha = 0.05
+col.names = colnames(srates)
+for (i in 1:ncol(srates)) {
+if (i == 1) cat("Variables que no segueixen una distribució normal:\n")
+if (is.integer(srates[,i]) | is.numeric(srates[,i])) {
+p_val = ad.test(srates[,i])$p.value
+if (p_val < alpha) {
+cat(col.names[i])
+# Format de l'output
+if (i < ncol(srates) - 1) cat(", ")
+if (i %% 3 == 0) cat("\n")
+}
+}
+}
+```
+- Comprovació d'homogeneïtat de la variància:
+En aquest cas, realitzarem la prova utilitzant el test de Fligner-Killeen.
+
+```{r}
+fligner.test(srates$suicides.100k.pop ~ srates$sex, data = srates)
+fligner.test(srates$suicides.100k.pop ~ srates$age, data = srates)
+```
+Tant per la variable "sex" com "age", hem obtingut un p-valor inferior a 0,05, per tant, assumim que les variàncies no son homògenes.
+
+# 4.3. Aplicació de proves estadístiques per comparar els grups de dades. En funció de les dades i de l’objectiu de l’estudi, aplicar proves de contrast d’hipòtesis, correlacions, regressions, etc. Aplicar almenys tres mètodes d’anàlisi diferents.
+
+- Taula de correlació entre les variables:
+
+```{r}
+cor(srates_dummies, method = "pearson")
+```
+
+Sex: Els resultats mostren una correlació positiva entre ser home i el nombre de suicidis, i una correlació negativa amb ser dona.
+Age: Podem observar una correlació positiva entre l'edat i el nombre de suicidis. La correlació incrementa a mesura que incrementa l'edat.
+
+- Test d'hipòtesis:
+
+Pretenem respondre la següent pregunta: Arreu món, els homes son més propenses que els homes a suicidar-se?
+Per aconseguir-ho, realitzarem un test paramètric sobre les diferències de les mitjanes. 
+Primer dividirem la mostra en dos sbusets, un contindrà les observacions corresponents a les dones i l'altre als homes.
+```{r}
+srates_dones <- srates[srates$sex == "female",]$suicides.100k.pop
+srates_homes <- srates[srates$sex == "male",]$suicides.100k.pop
+```
+
+Test:
+H0 : μ1 − μ2 = 0
+H1 : μ1 − μ2 < 0
+
+Utilitzarem una alfa de 0,05.
+```{r}
+t.test(srates_dones, srates_homes, alternative = "less")
+```
+Efectivament, en la mateixa línia que els resultats que ens ostra la taula de correlacions de l'apartat anterior, podem concloure que els homes han estat  més propensos al suicidi.
+
+- Model de regressió lineal:
+
+A continuació realitzarem un model de regressió lineal per estimar l'impacte de les variables "sex" i "age" en el nombre de suicidis.
+La variable "suicides.100k.pop" acctuarà com a variable dependent, i les dummies de "sex" i "age" com a variables explicatives.
+
+```{r}
+model <- lm(srates$suicides.100k.pop ~ srates$sex + srates$age, data = srates)
+summary(model)
+```
+Com que les variables explicatives son dummies, interpretar les betes resultants com: Les unitats que el nombre de suicidis per cada 100 persones augmenta, quan la variable "sex" o "age" pren el valor en qüestió.
+
+Sex: De tal manera, el fet de que una persona sigui home, incideix positivament en el nombre de suicidis.
+Age: En la mateixa línia del que hem observat en la taula de correlacions, l'edat incideix positivament en el nombre de suicidis. Els resultats mostre, que tenir entre 5-14 any hi incideix negativament, i 75 + anys és la que hi incideix més positivament.
+
+## 5. Representació dels resultats a partir de taules i gràfiques.
+
+Representació gràfica de les línies de regressió del model anterior:
+```{r}
+library(tidyverse)
+ggplot(srates_dummies, aes(srates_dummies$sexmale, srates_dummies$suicides.100k.pop)) +  geom_point() + stat_smooth(method = lm)
+ggplot(srates_dummies, aes(srates_dummies$sexfemale, srates_dummies$suicides.100k.pop)) +  geom_point() + stat_smooth(method = lm)
+ggplot(srates_dummies, aes(srates_dummies$age15.24.years, srates_dummies$suicides.100k.pop)) +  geom_point() + stat_smooth(method = lm)
+ggplot(srates_dummies, aes(srates_dummies$age25.34.years, srates_dummies$suicides.100k.pop)) +  geom_point() + stat_smooth(method = lm)
+ggplot(srates_dummies, aes(srates_dummies$age35.54.years, srates_dummies$suicides.100k.pop)) +  geom_point() + stat_smooth(method = lm)
+ggplot(srates_dummies, aes(srates_dummies$age5.14.years, srates_dummies$suicides.100k.pop)) +  geom_point() + stat_smooth(method = lm)
+ggplot(srates_dummies, aes(srates_dummies$age55.74.years, srates_dummies$suicides.100k.pop)) +  geom_point() + stat_smooth(method = lm)
+ggplot(srates_dummies, aes(srates_dummies$age75..years, srates_dummies$suicides.100k.pop)) +  geom_point() + stat_smooth(method = lm)
+```
+
+## 6. Resolució del problema. A partir dels resultats obtinguts, quines són les conclusions?
+
+Els resultats obtinguts han sigut robustos al llarg de tot l'anàlisi.
+En quant a la variable "sex", han mostrat que ser un home incideix positivament en el nombre de suicidis i ser una dona ho fa negativament.
+Per altra banda, en quant a la variable "age", hem observat que ser jove incideix negativament en el nombre de suicidis, i ser vell ho fa positivament.
+
+Per tant, aquest anàlisi empíric ens ha permès donar resposta al problema.
